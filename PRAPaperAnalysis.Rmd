@@ -1,0 +1,824 @@
+---
+title: "Transplant Study"
+author:
+  - 'Dr. Nina Guzzetta, Dr. Susana Cruz Beltran'
+  - 'Statisticians: Dr. Renee Moore, Andrea Lane'
+date: "3/18/2020"
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+knitr::opts_chunk$set(fig.width=6, fig.height=4) 
+library(readxl)
+library(epitrix)
+library(dplyr)
+library(rockchalk)
+library(kableExtra)
+library(summarytools)
+library(ggplot2)
+library(ggmosaic)
+library(tidyverse)
+
+options(knitr.table.format = "latex")
+
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00")
+
+```
+
+```{r upload}
+df.sheet1 <- read_excel("Transplant data.final.xlsx", sheet = 1,
+                        col_types = c("text","text","date","text","numeric",
+                                      "text","text","text", "date","date",
+                                      "text","text","text","numeric","text",
+                                      "text",rep("numeric",5),"text",rep("numeric",16)))
+df.sheet2 <- read_excel("Transplant data.final.xlsx", sheet = 2,
+                        col_types = c("text","text","date","text","numeric",
+                                      "text","text","text", "date","date",
+                                      "text","text","text","numeric",rep("numeric",6),"text",
+                                      "text",rep("numeric",5),"text",rep("numeric",16)))
+
+df.neg <- df.sheet1[-1,]
+df.pos <- df.sheet2[-1,]
+
+names(df.neg) <- clean_labels(names(df.neg))
+names(df.pos) <- clean_labels(names(df.pos))
+
+names(df.neg)[1] <- "Subj_num"
+names(df.pos)[1] <- "Subj_num"
+
+names(df.neg)[25] <- "prior_rbc"
+names(df.neg)[26] <- "prior_ffp"
+names(df.neg)[27] <- "prior_plt"
+names(df.neg)[28] <- "prior_cryo"
+
+names(df.neg)[30] <- "dos_rbc"
+names(df.neg)[31] <- "dos_ffp"
+names(df.neg)[32] <- "dos_plt"
+names(df.neg)[33] <- "dos_cryo"
+
+names(df.neg)[35] <- "post_rbc"
+names(df.neg)[36] <- "post_ffp"
+names(df.neg)[37] <- "post_plt"
+names(df.neg)[38] <- "post_cryo"
+
+
+names(df.pos)[31] <- "prior_rbc"
+names(df.pos)[32] <- "prior_ffp"
+names(df.pos)[33] <- "prior_plt"
+names(df.pos)[34] <- "prior_cryo"
+
+names(df.pos)[36] <- "dos_rbc"
+names(df.pos)[37] <- "dos_ffp"
+names(df.pos)[38] <- "dos_plt"
+names(df.pos)[39] <- "dos_cryo"
+
+names(df.pos)[41] <- "post_rbc"
+names(df.pos)[42] <- "post_ffp"
+names(df.pos)[43] <- "post_plt"
+names(df.pos)[44] <- "post_cryo"
+
+df.all <- bind_rows("1" = df.neg, "2" = df.pos, .id="pra_status")
+
+```
+
+```{r clean}
+df.all$age_unit <- substr(df.all$age_years,nchar(df.all$age_years),nchar(df.all$age_years))
+df.all$age_num <- substr(df.all$age_years,1,nchar(df.all$age_years)-1)
+
+df.all$age <- ifelse(df.all$age_unit == "m", as.numeric(df.all$age_num)/12, ifelse(df.all$age_unit == "w", as.numeric(df.all$age_num)/52, as.numeric(df.all$age_num)))
+
+df.all$abo_incompatible_nomiss <- ifelse(is.na(df.all$abo_incompatible),0,1)
+df.all$prior_mech_nomiss <- ifelse(is.na(df.all$prior_mech_support),0,1)
+
+df.all$plasma_c <- ifelse(df.all$plasmapheresis %in% c("Yes","yes"),1,0)
+df.all$rej_c <- ifelse(df.all$rejection=="N",0,1)
+
+df.all$plasma_c <- factor(df.all$plasma_c, levels = c(0,1),
+                          labels = c("No","Yes"))
+df.all$rej_c <- factor(df.all$rej_c, levels = c(0,1), labels = c("No","Yes"))
+df.all$ecmo_c <- factor(df.all$ecmo_support_postop, levels = c("no","yes"),
+                        labels = c("no","yes"))
+df.all$diag_c <- df.all$diagnosis
+df.all$diag_c[df.all$diag_c=="LV failure"] <- "Dilated CM"
+df.all$diag_c[df.all$diag_c=="RV Failure" | df.all$diag_c=="Shone's complex- Coarct - Multiple VSD"] <- "Other"
+
+df.all$diag_c <- factor(df.all$diag_c, 
+      levels = c("ARVD","Dilated CM","Failed SV","Restrictive CM","Other"),
+      labels = c("ARVD","Dilated CM","Failed SV","Restrictive CM","Other"))
+df.all$donor_c <- factor(df.all$donor_specific_ab, levels = c("N","Y"),
+                         labels = c("No","Yes"))
+df.all$gender_c <- factor(df.all$gender, levels = c("F","M"), labels = c("Female","Male"))
+df.all$race_c <- factor(df.all$race, 
+        levels = c("White","African American","Hispanic","Asian","Declined"),             labels = c("White","African American","Hispanic","Asian","No response"))
+df.all$abo_incompatible_nomiss <- factor(df.all$abo_incompatible_nomiss, 
+                                         levels = c(0,1), labels = c("No","Yes"))
+df.all$prior_mech_nomiss <- factor(df.all$prior_mech_nomiss, levels = c(0,1),
+                                         labels = c("No","Yes"))
+
+df.all <- df.all[!is.na(df.all$prior_donor_exposures),]
+```
+
+```{r functions}
+my2x2 <- function(X,Y,col=TRUE){
+  perc <- ifelse(col,2,1)
+  mytab <- table(X,Y)
+  proptab <- format(round(prop.table(mytab,perc)*100,1),nsmall = 1,trim=TRUE)
+  mytab2 <- matrix(paste0(mytab," (",proptab,")"),nlevels(X),2)
+  mytab2 <- rbind(mytab2, colSums(mytab))
+  mytab <- cbind(mytab2, c(rowSums(mytab),sum(rowSums(mytab))))
+  return(mytab)
+}
+
+mypval <- function(X,Y,symbol=TRUE){
+  if (class(X)=="numeric"){
+    test <- "Wilcoxon rank-sum"
+    pval <- wilcox.test(X[df.all$pra_status==1],X[df.all$pra_status==2])$p.value
+    pval <- ifelse(pval == 1,0.99,pval)
+    pval <- format(round(pval,2), nsmall=2)
+    pval <- ifelse(pval==0,"<0.0001",pval)
+  } else if (class(X)=="factor"){
+  
+  tab <- table(X,Y)
+  exp.tab <- chisq.test(tab)$expected
+  test <- ifelse(all(exp.tab > 5),"Chi Square","Fisher's Exact")
+  pval <- ifelse(all(exp.tab > 5),chisq.test(tab,correct = FALSE)$p.value,fisher.test(tab)$p.value)
+  pval <- ifelse(pval == 1,0.99,pval)
+  pval <- format(round(pval,2), nsmall=2)
+  pval <- ifelse(pval=="0.00","<0.01",pval)
+  if(symbol){pval <- ifelse(test=="Chi Square",
+                 paste0(pval,"*"),
+                 paste0(pval,"**"))}
+  }
+  return(list(pval = pval, test = test))
+}
+
+varlevels <- function(X){
+  if(class(X)=="numeric"){
+    nlev <- 1
+  } else if (class(X)=="factor"){
+    nlev <- nlevels(X)
+  }
+  return(nlev)
+}
+
+mystats <- function(X,Y){
+  if (class(X)=="numeric"){
+    tab <- matrix(NA,1,3)
+    all_1 <- format(round(median(X,na.rm = TRUE),1),nsmall = 1)
+    all_2 <- paste0("(",format(round(quantile(X,na.rm = TRUE)[2],1),nsmall=1),",",
+                    format(round(quantile(X,na.rm = TRUE)[4],1),nsmall=1),")")
+    
+    strat1_1 <- format(round(median(X[Y==1],na.rm = TRUE),1),nsmall=1)
+    strat2_1 <- format(round(median(X[Y==2],na.rm = TRUE),1),nsmall=1)
+    
+    strat1_2 <- paste0("(",format(round(quantile(X[Y==1],na.rm = TRUE)[2],1),nsmall=1),",",
+                       format(round(quantile(X[Y==1],na.rm = TRUE)[4],1),nsmall=1),")")
+    strat2_2 <- paste0("(",format(round(quantile(X[Y==2],na.rm = TRUE)[2],1),nsmall = 1),",",
+                       format(round(quantile(X[Y==2],na.rm = TRUE)[4],1),nsmall = 1),")")
+    
+    cell1 <- paste(all_1,all_2)
+    cell2 <- paste(strat1_1,strat1_2)
+    cell3 <- paste(strat2_1,strat2_2)
+    
+    tab <- cbind(cell1,cell2,cell3)
+  } else if (class(X)=="factor"){
+    nlev <- nlevels(X)
+    all_1 <- c()
+    all_2 <- c()
+    strat1_1 <- c()
+    strat2_1 <- c()
+    strat1_2 <- c()
+    strat2_2 <- c()
+    tab <- matrix(NA,nlev,3)
+    for(i in 1:nlev){
+    tab1 <- table(X)
+    all_1[i] <- paste(tab1[i])
+    all_2[i] <- paste0("(",format(round(prop.table(tab1)[i]*100,1),nsmall = 1),")")
+    
+    tab2 <- table(X,Y)
+    strat1_1[i] <- tab2[i,1]
+    strat1_2[i] <- paste0("(",format(round(prop.table(tab2,2)[i,1]*100,1),nsmall = 1),")")
+    
+    strat2_1[i] <- tab2[i,2]
+    strat2_2[i] <- paste0("(",format(round(prop.table(tab2,2)[i,2]*100,1),nsmall = 1),")")
+      
+    }
+    cell1 <- paste(all_1,all_2)
+    cell2 <- paste(strat1_1,strat1_2)
+    cell3 <- paste(strat2_1,strat2_2)
+
+    tab <- cbind(cell1,cell2,cell3)
+
+  }
+  return(tab)
+}
+
+```
+
+\clearpage
+\section{Summary Tables}
+```{r table1}
+varlist <- c("age","gender_c","race_c","weight","prior_mech_nomiss","no_of_prior_surgeries",
+             "abo_incompatible_nomiss","cpb_time","donor_time")
+# var_levels <- lapply(df.all[varlist], FUN = varlevels)
+# df_levels <- data.frame(matrix(unlist(var_levels), nrow=length(varlist),byrow = T))
+
+myfulltab <- lapply(df.all[varlist], FUN = mystats, Y = df.all$pra_status)
+
+mat.tab <- as.matrix(unlist(myfulltab[[1]]))
+for (i in 2:length(myfulltab)){
+  mat.tab <- rbind(mat.tab,as.matrix(unlist(myfulltab[[i]])))
+}
+
+mypvals <- lapply(df.all[varlist], function(x)
+                  rep(mypval(x,df.all$pra_status,TRUE)$pval,varlevels(x)))
+# mytest <- lapply(df.all[varlist], function(x)
+#                   rep(mypval(x,df.all$pra_status)$test,varlevels(x)))
+# mytestmat <- as.matrix(unlist(mytest))
+mypvalmat <- as.matrix(unlist(mypvals))
+mat.tab.p <- cbind(mat.tab,mypvalmat)
+df.tab <- data.frame(mat.tab.p)
+
+names(df.tab)[2] <- paste0(names(df.tab)[2],
+  footnote_marker_symbol(1, "latex"))
+rownames(df.tab) <- c("Age (Years)", "Female", "Male", "White", "African American", "Hispanic",
+                      "Asian", "No response", "Weight at transplantation (kg)", 
+                       "No ", "Yes ", "Number of previous surgeries", "No", "Yes", 
+                      "CPB time (min)", "Donor cross clamp time (min)")
+
+kable(df.tab, "latex", booktabs = T, align = "l", col.names = c("All patients (n=64)", "PRA- (n=35)", "PRA+ (n=29)", "p value"), caption = "Demographic and Surgical Data") %>%
+  kable_styling(latex_options = "hold_position") %>% 
+  group_rows("Gender", 2, 3, bold = FALSE) %>% 
+  group_rows("Race", 4, 8, bold = FALSE) %>% 
+  group_rows("Mechanical support prior to transplantation", 10, 11, bold = FALSE) %>% 
+  group_rows("ABO Incompatible", 13, 14, bold = FALSE) %>% 
+  collapse_rows(columns = 5,valign = "top", latex_hline = "none") %>% 
+  footnote(general = "Continuous variables: median (Q1,Q3), Wilcoxon rank sum test; Categorical variables: N(%)",
+           symbol = c("Chi Square test; ", "Fisher's exact test"),
+           footnote_as_chunk = T, symbol_manual = c('*', '**'))
+
+```
+
+Table 1 displays the demographic variables stratified by PRA status. All continuous variables were evaluated with the nonparametric Wilcoxon rank sum test because of non-normality. Categorical variables were evaluated with either a chi square test or Fisher's exact test depending on expected values. No variables in this table are statistically significant.
+
+```{r objective}
+varlist <- c("diag_c", "prior_donor_exposures", "donor_c")
+myfulltab <- lapply(df.all[varlist], FUN = mystats, Y = df.all$pra_status)
+
+mat.tab <- as.matrix(unlist(myfulltab[[1]]))
+for (i in 2:length(myfulltab)){
+  mat.tab <- rbind(mat.tab,as.matrix(unlist(myfulltab[[i]])))
+}
+
+mypvals <- lapply(df.all[varlist], function(x)
+                  rep(mypval(x,df.all$pra_status,TRUE)$pval,varlevels(x)))
+mypvalmat <- as.matrix(unlist(mypvals))
+mat.tab.p <- cbind(mat.tab,mypvalmat)
+df.tab <- data.frame(mat.tab.p)
+
+rownames(df.tab) <- c("ARVD","Dilated CM","Failed SV","Restrictive CM","Other",
+                      "Number of previous blood product exposures",
+                      "No","Yes")
+
+kable(df.tab, "latex", booktabs = T, align = "l", col.names = c("All patients (n=64)", "PRA- (n=35)", "PRA+ (n=29)", "p value"), caption = "Study Objectives") %>%
+  kable_styling(latex_options = "hold_position") %>% 
+  group_rows("Diagnosis", 1, 5, bold = FALSE) %>% 
+  group_rows("Development of donor specific antibody", 7, 8, bold = FALSE) %>% 
+  collapse_rows(columns = 5,valign = "top", latex_hline = "none") %>% 
+  footnote(general = "Continuous variables: median (Q1,Q3), Wilcoxon rank sum test; Categorical variables: N(%)",
+           symbol = c("Chi Square test; ", "Fisher's exact test"),
+           footnote_as_chunk = T, symbol_manual = c('*', '**'))
+
+
+```
+This table displays variables relevant to the study objectives. Diagnosis categories were combined as follows: "LV Failure" was combined with "Dilated CM", and "RV Failure" and "Shone's complex" were grouped as "Other." As in table 1, continuous variables are evaluated with the nonparametric Wilcoxon rank sum test and categorical variables are evaluated with either the chi square test or Fisher's exact test, depending on expected values. None of the variables are significant at the 0.05 level, but blood product exposures and donor specific antibody are marginally significant.
+
+```{r outcome}
+varlist <- c("icu_length_of_stay_day", "vis", "plasma_c", "time_to_extubation_hr",
+             "rej_c", "ecmo_c")
+myfulltab <- lapply(df.all[varlist], FUN = mystats, Y = df.all$pra_status)
+
+mat.tab <- as.matrix(unlist(myfulltab[[1]]))
+for (i in 2:length(myfulltab)){
+  mat.tab <- rbind(mat.tab,as.matrix(unlist(myfulltab[[i]])))
+}
+
+mypvals <- lapply(df.all[varlist], function(x)
+                  rep(mypval(x,df.all$pra_status,TRUE)$pval,varlevels(x)))
+mypvalmat <- as.matrix(unlist(mypvals))
+mat.tab.p <- cbind(mat.tab,mypvalmat)
+df.tab <- data.frame(mat.tab.p)
+
+rownames(df.tab) <- c("ICU Length of Stay (days)","VIS","No","Yes","Time to Extubation (hrs)", "No ", "Yes ", "No  ", "Yes  ")
+
+kable(df.tab, "latex", booktabs = T, align = "l", col.names = c("All patients (n=64)", "PRA- (n=35)", "PRA+ (n=29)", "p value"), caption = "Outcome Variables") %>%
+  kable_styling(latex_options = "hold_position") %>% 
+  group_rows("Plasmapheresis (%)", 3, 4, bold = FALSE) %>% 
+  group_rows("Rejection (%)", 6, 7, bold = FALSE) %>% 
+  group_rows("ECMO support post op (%)", 8, 9, bold = FALSE) %>% 
+  collapse_rows(columns = 5,valign = "top", latex_hline = "none") %>% 
+  footnote(general = "Continuous variables: median (Q1,Q3), Wilcoxon rank sum test; Categorical variables: N(%)",
+           symbol = c("Chi Square test; ", "Fisher's exact test"),
+           footnote_as_chunk = T, symbol_manual = c('*', '**'))
+
+```
+
+Table 3 displays outcomes of interest. Methodology is the same as in previous tables. Values of rejection other than "No" were grouped as "Yes" ("Yes - cell mediated" and "Yes - Ab mediated"). At the 0.05 significance level, plasmapheresis and time to extubation are significant. Therefore, plasmapheresis and time to extubation significantly differ between PRA- and PRA+ groups. ICU length of stay is marginally significant.
+
+\clearpage
+\section{Blood product exposures}
+\subsection{Binary blood product exposures}
+Now we investigate the relationship between PRA development and blood product exposures prior to transplantation. First, we look at the relationship between those who do and do not develop PRAs. Blood products are divided into four components: RBCs, FFP, platelets, and cryo. The data present blood product exposures as counts, so new variables were created to indicate whether or not that blood product was present in each patient. 
+
+Each table presents counts of each combination of blood product exposure and PRA status, as well as a column percentage. This column percentage states the percentage of patients within each PRA status that had each blood product exposure. For example, in Table 4, 37.1% of the PRA- patients had no previous blood product exposures. Comparatively, 6.9% of PRA+ patients had no previous blood product exposures. This could be changed to a row percentage depending on clinical interest. A row percentage would display, for example, the percentage of those without blood product exposures who were and were not PRA+.
+
+Each table is statistically evaluated with either a chi square test or Fisher's exact test, depending on expected counts. Significance is evaluated at the 0.05 level.
+
+```{r bloodprodclean}
+##create binary variables for did/did not have prior exposures
+df.blood <- df.all[!is.na(df.all$prior_donor_exposures),]
+df.blood$prior_bin <- factor(ifelse(df.blood$prior_donor_exposures>0,1,0),levels = c(0,1))
+df.blood$rbc_bin <- factor(ifelse(df.blood$prior_rbc>0,1,0),levels = c(0,1))
+df.blood$ffp_bin <- factor(ifelse(df.blood$prior_ffp>0,1,0),levels = c(0,1))
+df.blood$plt_bin <- factor(ifelse(df.blood$prior_plt>0,1,0),levels = c(0,1))
+df.blood$cryo_bin <- factor(ifelse(df.blood$prior_cryo>0,1,0),levels = c(0,1))
+df.blood$cell <- df.blood$prior_rbc + df.blood$prior_plt
+df.blood$acell <- df.blood$prior_ffp + df.blood$prior_cryo
+df.blood$cell_bin <- factor(ifelse(df.blood$cell>0,1,0),levels = c(0,1))
+df.blood$acell_bin <- factor(ifelse(df.blood$acell>0,1,0),levels = c(0,1))
+
+```
+
+```{r bloodprodtabs}
+make2x2table <- function(X,Y,mycols,myrows,caption){
+  tab <- my2x2(X,Y)
+  pval <- mypval(X,Y,FALSE)
+  foot <- paste0("p = ",pval$pval," (",pval$test,")")
+  rownames(tab) <- myrows
+  rowspec <- nlevels(X)
+  mytable <- kable(tab, col.names = mycols, row.names = TRUE, "latex", booktabs = T,
+                   caption=caption) %>%
+  kable_styling(latex_options = "hold_position", full_width = FALSE) %>%
+  footnote(general = foot) %>%
+  row_spec(rowspec, hline_after = TRUE) %>%
+  column_spec(c(2,4), border_left  = TRUE)
+
+  return(mytable)
+}
+colnames.all <- c("PRA-", "PRA+", "Total")
+
+make2x2table(df.blood$prior_bin,df.blood$pra_status,colnames.all,myrows=c("No previous blood product exposures","Previous blood product exposures","Total"),"Previous blood product \nexposures")
+```
+In table 4, we see that 62.9% of PRA- patients had previous blood product exposures, compared to 93.1% of PRA+ patients. There is a significant association between total prior blood product exposure and PRA status ($p<0.01$).
+
+```{r tab5}
+make2x2table(df.blood$rbc_bin,df.blood$pra_status,colnames.all,myrows=c("No previous RBC","Previous RBC","Total"),"Previous RBC exposures")
+```
+62.9% of PRA- patients had prior RBC exposures, whereas 89.7% of PRA+ patients had prior RBC exposures. Ther is a significant association between RBC exposure and PRA status ($p=0.01$).
+
+```{r tab6}
+make2x2table(df.blood$plt_bin,df.blood$pra_status,colnames.all,myrows=c("No previous platelets","Previous platelets","Total"),"Previous platelet exposures")
+```
+48.6% of PRA- patients had previous platelet exposures compared to 62.1% of PRA+ patients. There is not a significant association between prior platelet exposures and PRA status.
+
+```{r tab7}
+make2x2table(df.blood$ffp_bin,df.blood$pra_status,colnames.all,myrows=c("No previous FFP","Previous FFP","Total"),"Previous FFP exposures")
+```
+51.4% of PRA- patients had prior FFP exposures, and 58.6% of PRA+ patients had prior FFP exposures. There is not a significant association between FFP exposure and PRA status.
+
+```{r tab8}
+make2x2table(df.blood$cryo_bin,df.blood$pra_status,colnames.all,myrows=c("No previous cryo","Previous cryo","Total"),"Previous Cryo exposure")
+```
+48.6% of PRA- patients had prior cryo exposures, and 58.6% of PRA+ patients had prior cryo exposures. There is not a significant association between cryo exposure and PRA status.
+
+```{r tab9}
+make2x2table(df.blood$cell_bin,df.blood$pra_status,colnames.all,myrows=c("No previous cellular","Previous cellular","Total"),"Previous cellular (RBC,Platelet) exposure")
+```
+Blood products were grouped into cellular (RBC, platelet) and acellular (FFP, cryo). 62.9% of PRA- patients had prior cellular exposures, and 93.1% of PRA+ patients had prior cellular exposures. This association is significant ($p<0.01$). Note that these counts are the same as the total prior blood product exposure counts.
+
+```{r tab10}
+make2x2table(df.blood$acell_bin,df.blood$pra_status,colnames.all,myrows=c("No previous acellular","Previous acellular","Total"),"Previous acellular (FFP, Cryo) exposure")
+```
+51.4% of PRA- patients had acellular exposures, compared to 72.4% of PRA+ patients. There is not a significant association between acellular exposures and PRA status.
+
+\clearpage
+
+Here I present graphical illustrations of tables 4 and 5. The plots are presented as both counts and percentages to reflect the information in the tables. For example, in the second plot, we see that 62.9% of PRA- patients had prior blood product exposures, whereas 93.1% of PRA+ patients had prior blood product exposures.
+
+```{r bloodprodplots}
+make2x2plot <- function(X,Y,title,count=TRUE,xlabs,xlabtitle,fillabs,leglab,legsize=16){
+  pos <- ifelse(count,"dodge","fill")
+  ylab <- ifelse(count,"Count","Percent")
+  if(count){
+    mybreaks <- seq(0,30,5)}
+  else{
+    mybreaks <- seq(0,1,1/4)}
+  if(count){
+    labs <- c("0","5","10","15","20","25","30")}
+  else{
+    labs <- c("0","25","50","75","100")}
+  if(nlevels(Y)>2){
+    colors <- cbPalette
+  } else {colors <- rev(cbPalette)}
+  
+  myplot <- ggplot(df.blood, aes(fill=Y, x=X)) + 
+              geom_bar(position=pos, stat="count")+
+              xlab(xlabtitle)+ ylab(ylab)+ labs(fill = leglab)+
+              scale_fill_manual(values = colors, labels=fillabs)+
+              theme_minimal()+
+              theme(legend.text = element_text(size = legsize), 
+                    plot.title = element_text(size = 16, face = "bold"),
+                    axis.text.y = element_text(size = 12),
+                    axis.title.y = element_text(size=16),
+                    axis.text.x = element_text(size = 12))+
+              scale_x_discrete(labels=xlabs)+
+              scale_y_continuous(breaks=mybreaks,labels = labs)+
+              ggtitle(title)
+  return(myplot)
+}
+make2x2plot(df.blood$pra_status,df.blood$prior_bin,
+            "Presence of Prior Blood Product Exposures \n(Count)",
+            TRUE,c("PRA-","PRA+"),"",
+            c("No previous blood \n product exposures","Previous blood \n product exposures"),
+            "",10)
+make2x2plot(df.blood$pra_status,df.blood$prior_bin,
+            "Presence of Prior Blood Product Exposures \n(%)",
+            FALSE,c("PRA-","PRA+"),"",
+            c("No previous blood \n product exposures","Previous blood \n product exposures"),
+            "",10)
+make2x2plot(df.blood$pra_status,df.blood$rbc_bin,
+            "Presence of Prior RBC Exposures \n(Count)",
+            TRUE,c("PRA-","PRA+"),"",
+            c("No previous \nRBC exposures","Previous \nRBC exposures"),
+            "",10)
+make2x2plot(df.blood$pra_status,df.blood$rbc_bin,
+            "Presence of Prior RBC Exposures \n(%)",
+            FALSE,c("PRA-","PRA+"),"",
+            c("No previous \nRBC exposures","Previous \nRBC exposures"),
+            "",10)
+
+
+```
+
+\clearpage
+\subsection{Blood product exposure categories}
+For this section, a new variable was created to indicate the number of distinct blood product exposures for each patient. For example, a patient who had a positive count of exposures for RBC and platelets but no FFP or cryo exposures would have 2 distinct exposures. This could be any two exposures, so a patient exposed to only FFP and platelets would also have a value of 2. 
+```{r numberofprods}
+df.blood$prodsum <- as.numeric(df.blood$rbc_bin) + as.numeric(df.blood$plt_bin) + as.numeric(df.blood$ffp_bin) + as.numeric(df.blood$cryo_bin)
+df.blood$prodsum <- factor(df.blood$prodsum, levels = c(4,5,6,7,8),
+                           labels = c("0","1","2","3","4"))
+make2x2table(df.blood$prodsum,df.blood$pra_status,colnames.all,myrows=c("0 exposures","1","2","3","4","Total"),"Categories of previous \nblood product exposures")
+```
+In table 11, we see both counts and column percentages of number of distinct exposures for PRA- and PRA+ patients. For example, 42.9% of PRA- patients were exposed to all 4 blood product categories, while 41.4% of PRA+ patients were exposed to all 4 categories. There is a significant association between number of distinct exposures and PRA status ($p=0.02$). 
+
+The figures below display these counts and percentages graphically. The first figure shows the counts of each number of distinct exposures for PRA- and PRA+ patients. The second figure displays the percentages of each number of distinct exposures for PRA- and PRA+ patients.
+
+```{r prods2}
+make2x2plot(df.blood$prodsum,df.blood$pra_status,
+            "Categories of previous \nblood product exposures (count)",
+            TRUE,
+            c("0","1","2","3","4"),
+            "Number of exposure categories",
+            c("PRA-","PRA+"),"")
+
+make2x2plot(df.blood$pra_status,df.blood$prodsum,
+            "Categories of previous \nblood product exposures (%)",
+            FALSE,
+            c("PRA-","PRA+"),
+            "",c("0","1","2","3","4"),
+            "Number of exposure \ncategories")
+
+```
+
+Here we see that while approximately the same percentage of PRA- and PRA+ patients are exposed to all four categories, PRA+ patients contain a larger percentage of 1, 2, and 3 categories and a lower percentage of 0 categories.
+
+\clearpage
+\subsection{Blood product exposure counts}
+
+Now we look at **counts** of blood product exposures and the relationship with PRA development. We treat PRA development as binary (PRA+/-). This table was not included in the previous results and none of the exposure categories are statistically significant at the 0.05 level. However, I wanted to include the table as well as the overlapping histograms in case they might be clinically meaningful.
+
+```{r prabintab}
+varlist <- c("prior_rbc", "prior_plt", "prior_ffp",
+             "prior_cryo")
+myfulltab <- lapply(df.blood[varlist], FUN = mystats, Y = df.blood$pra_status)
+
+mat.tab <- as.matrix(unlist(myfulltab[[1]]))
+for (i in 2:length(myfulltab)){
+  mat.tab <- rbind(mat.tab,as.matrix(unlist(myfulltab[[i]])))
+}
+
+mypvals <- lapply(df.blood[varlist], function(x)
+                  rep(mypval(x,df.blood$pra_status)$pval,varlevels(x)))
+mypvalmat <- as.matrix(unlist(mypvals))
+mat.tab.p <- cbind(mat.tab,mypvalmat)
+df.tab <- data.frame(mat.tab.p)
+
+rownames(df.tab) <- c("RBCs","Platelets","FFP","Cryo")
+
+kable(df.tab, "latex", booktabs = T, align = "l", col.names = c("All patients (n=64)", "PRA- (n=35)", "PRA+ (n=29)", "p value"), caption = "Previous blood product exposure categories") %>%
+  kable_styling(latex_options = "hold_position") %>% 
+  collapse_rows(columns = 5,valign = "top", latex_hline = "none") %>% 
+  footnote(general = "Median (Q1,Q3), Wilcoxon rank sum test")
+
+```
+
+```{r prabinhist}
+makehisto <- function(X,Y,xlab,title,fillabs,leglab){
+    myplot <- ggplot(df.blood, aes(x=X, fill=Y)) +
+                  geom_histogram(position="identity", alpha=0.5, binwidth = 10)+
+                  xlab(xlab)+ ylab("Count")+
+                  theme_minimal()+
+                  scale_fill_manual(name=leglab, values=rev(cbPalette),labels=c("PRA-","PRA+"))+
+                  theme(legend.text = element_text(size = 16),
+                    plot.title = element_text(size = 16, face = "bold"),
+                    axis.text.y = element_text(size = 12),
+                    axis.title.y = element_text(size=16),
+                    axis.text.x = element_text(size = 12),
+                    axis.title.x = element_text(size=16))+
+                  ggtitle(title)
+    
+    return(myplot)
+}
+
+makehisto(df.blood$prior_rbc,df.blood$pra_status,
+          "RBC","RBC counts",c("PRA-","PRA+"),"")
+makehisto(df.blood$prior_plt,df.blood$pra_status,
+          "Platelets","Platelet counts",c("PRA-","PRA+"),"")
+makehisto(df.blood$prior_ffp,df.blood$pra_status,"FFP",
+          "FFP counts",c("PRA-","PRA+"),"")
+makehisto(df.blood$prior_cryo,df.blood$pra_status,"Cryo",
+          "Cryo counts",c("PRA-","PRA+"),"")
+
+```
+
+\clearpage
+\section{Blood product counts and cPRA}
+
+Now we look at counts of blood product exposure and cPRA. Therefore, we are treating both variables as continuous. All subjects are still included, so for PRA- patients, cPRA=0. One observation is excluded from these analyses because its cPRA value is missing, so N=63.
+
+```{r cpratab}
+df.cpra <- df.blood[!is.na(df.blood$cpra),]
+makecorrtab <- function(varlist,Y,rownames=NULL,caption){
+  corrs <- lapply(df.cpra[varlist], 
+                  function(x) cor(x,Y,method="spearman"))
+  pvals <- lapply(df.cpra[varlist], 
+                  function(x) cor.test(x,Y,method="spearman")$p.value)
+  mytab <- cbind(as.matrix(unlist(corrs)),as.matrix(unlist(pvals)))
+  mytab <- matrix(format(round(mytab,2),nsmall = 2),length(varlist),2)
+  rownames(mytab) <- rownames
+  corrtab <- kable(mytab, col.names = c("Spearman rank correlation","p value"), 
+                   row.names = TRUE, "latex", booktabs = T,
+                   caption=caption) %>%
+  kable_styling(latex_options = "hold_position", full_width = FALSE)
+
+  return(corrtab)
+}
+
+varlist <- c("prior_donor_exposures","prior_rbc","prior_plt","prior_ffp","prior_cryo",
+             "cell","acell")
+makecorrtab(varlist,df.cpra$cpra,
+            c("Total prior exposures","RBC","platelets","FFP","Cryo","Cellular","Acellular"),
+            "Blood products and cPRA correlations")
+```
+The nonparametric Spearman rank correlation is used because of non-normality. Total prior exposures and acellular exposures are statistically significant, while RBC, cryo, and cellular exposures are marginally significant. These results align with those in section 2.1, with the exception of acellular exposures.
+
+Below, we present scatter plots of blood product exposure counts and cPRA. First, the total blood product exposure counts are presented. The second and third plots differentiate by blood product exposure categories.
+
+```{r scatter}
+makescatter <- function(df=df.cpra,X,Y=cpra,fac=TRUE,facvar=NULL,title,xlab,ylab="cPRA",
+                        faclabs=NULL,factitle=NULL,cols=cbPalette){
+  if(fac){
+  myplot <- ggplot(df, aes(x = X, y = Y))+
+                  geom_point(aes(colour=factor(facvar))) +
+                  xlab(xlab)+ ylab(ylab)+
+                  theme_minimal()+
+                  scale_colour_manual(name=factitle, values=cols,labels=faclabs)+
+                  theme(legend.text = element_text(size = 16),
+                    plot.title = element_text(size = 16, face = "bold"),
+                    axis.text.y = element_text(size = 12),
+                    axis.title.y = element_text(size=16),
+                    axis.text.x = element_text(size = 12),
+                    axis.title.x = element_text(size=16))+
+                  ggtitle(title)
+
+  } else{
+  myplot <- ggplot(df, aes(x = X, y = Y))+
+                  geom_point()+
+                  xlab(xlab)+ ylab(ylab)+
+                  theme_minimal()+
+                  theme(
+                    plot.title = element_text(size = 16, face = "bold"),
+                    axis.text.y = element_text(size = 12),
+                    axis.title.y = element_text(size=16),
+                    axis.text.x = element_text(size = 12),
+                    axis.title.x = element_text(size=16))+
+                  ggtitle(title)
+
+
+  }
+  return(myplot)
+    }
+
+makescatter(df.cpra,df.cpra$prior_donor_exposures,df.cpra$cpra,FALSE,
+            title="cPRA and Total blood product exposures",
+            xlab="Prior blood product exposures (counts)")
+
+cells <- match(c("prior_rbc","prior_plt","prior_ffp","prior_cryo"),names(df.cpra))
+dat3 <- gather(df.cpra,"key","value",cells)
+makescatter(dat3,dat3$value,dat3$cpra,TRUE,dat3$key,
+            title="cPRA and blood product exposure categories",
+            xlab="Prior blood product exposures (counts)",
+            faclabs = c("RBC","Plt","FFP","Cryo"),
+            factitle = "")
+
+cells <- match(c("cell","acell"),names(df.cpra))
+dat4 <- gather(df.cpra,"key","value",cells)
+makescatter(dat4,dat4$value,dat4$cpra,TRUE,dat4$key,
+            title="cPRA and blood product exposure categories",
+            xlab="Prior blood product exposures (counts)",
+            faclabs = c("Cellular","Acellular"),
+            factitle = "",
+            cols=rev(cbPalette))
+
+```
+
+\clearpage
+\section{Secondary outcomes of interest}
+
+This section explores secondary outcomes of interest, including VIS, previous surgeries, ICU length of stay, and time to extubation.
+
+```{r secondarytab}
+getcorr <- function(X,Y){
+  corr <- format(round(cor(X,Y,method = "spearman"),2),nsmall = 2)
+  pval <- format(round(cor.test(X,Y,method = "spearman")$p.value,2),nsmall = 2)
+  pval <- ifelse(pval=="0.00","<0.01",pval)
+  return(c(corr,pval))
+}
+
+mymat <- matrix(c(
+  getcorr(df.blood$no_of_prior_surgeries,df.blood$prior_donor_exposures),
+  getcorr(df.blood$vis,df.blood$icu_length_of_stay_day),
+  getcorr(df.blood$vis,df.blood$time_to_extubation_hr),
+  getcorr(df.blood$icu_length_of_stay_day,df.blood$time_to_extubation_hr)
+                ), nrow=4,ncol=2, byrow = TRUE)
+
+  rownames(mymat) <- c("Previous surgeries, total prior blood product exposures",
+                       "VIS, ICU length of stay","VIS, time to extubation",
+                       "ICU length of stay, time to extubation")
+  kable(mymat, col.names = c("Spearman rank correlation","p value"), 
+                   row.names = TRUE, "latex", booktabs = T,
+                   caption="Secondary correlations of interest") %>%
+  kable_styling(latex_options = "hold_position", full_width = FALSE)
+
+```
+Table 14 shows correlations among secondary outcomes of interest. All of these correlations are statistically significant. Therefore, patients who have more blood product exposures are also likely to have had more previous surgeries, those with a higher VIS are likely to have had a longer ICU stay and longer time to extubation, and those with a longer ICU stay are likely to also have a longer time to extubation.
+
+Below we present scatter plots of these linear relationships. 
+
+
+```{r secondaryscatter}
+makescatter(df.blood,df.blood$prior_donor_exposures,df.blood$no_of_prior_surgeries,fac=FALSE,
+            title="Total blood product exposures and prior surgeries",
+            xlab="Prior blood product exposures (counts)",
+            ylab="Number of prior surgeries")
+makescatter(df.blood,df.blood$vis,df.blood$icu_length_of_stay_day,fac=FALSE,
+            title="VIS and ICU length of stay",
+            xlab="VIS",
+            ylab="ICU length of stay (days)")
+makescatter(df.blood,df.blood$vis,df.blood$time_to_extubation_hr,fac=FALSE,
+            title="VIS and time to extubation",
+            xlab="VIS",
+            ylab="Time to extubation (hr)")
+makescatter(df.blood,df.blood$icu_length_of_stay_day,df.blood$time_to_extubation_hr,fac=FALSE,
+            title="ICU length of stay and time to extubation",
+            xlab="ICU length of stay (days)",
+            ylab="Time to extubation (hr)")
+
+```
+
+We see that there is an outlier in these variables, namely one patient who experienced a long ICU stay and time to extubation. I removed this outlier from the datset to see if these secondary relationships were strongly influenced by this single data point. The following table and plots present the same relationships but without this outlier and differentiated by PRA status.
+
+We see that the relationships continue to be statistically significant without the outlier.
+```{r noout}
+df.noout <- df.blood[-which(df.blood$icu_length_of_stay_day==max(df.blood$icu_length_of_stay_day)),]
+mymat <- matrix(c(
+  getcorr(df.noout$vis,df.noout$icu_length_of_stay_day),
+  getcorr(df.noout$vis,df.noout$time_to_extubation_hr),
+  getcorr(df.noout$icu_length_of_stay_day,df.noout$time_to_extubation_hr)
+                ), nrow=3,ncol=2, byrow = TRUE)
+
+  rownames(mymat) <- c("VIS, ICU length of stay","VIS, time to extubation",
+                       "ICU length of stay, time to extubation")
+  kable(mymat, col.names = c("Spearman rank correlation","p value"), 
+                   row.names = TRUE, "latex", booktabs = T,
+                   caption="Secondary correlations of interest") %>%
+  kable_styling(latex_options = "hold_position", full_width = FALSE)
+
+
+makescatter(df.noout,df.noout$vis,df.noout$icu_length_of_stay_day,fac=TRUE,df.noout$pra_status,
+            title="VIS and ICU length of stay",
+            xlab="VIS",
+            ylab="ICU length of stay (days)",
+            faclabs = c("PRA-","PRA+"),
+            factitle = "")
+makescatter(df.noout,df.noout$vis,df.noout$time_to_extubation_hr,fac=TRUE,df.noout$pra_status,
+            title="VIS and time to extubation",
+            xlab="VIS",
+            ylab="Time to extubation (hr)",
+            faclabs = c("PRA-","PRA+"),
+            factitle = "")
+
+makescatter(df.noout,df.noout$icu_length_of_stay_day,df.noout$time_to_extubation_hr,
+            fac=TRUE,df.noout$pra_status,
+            title="ICU length of stay and time to extubation",
+            xlab="ICU length of stay (days)",
+            ylab="Time to extubation (hr)",
+            faclabs = c("PRA-","PRA+"),
+            factitle = "")
+
+
+
+
+```
+
+\clearpage
+The following tables present other relationships of interest among categorical variables.
+```{r alleles}
+df.alleles <- df.blood[df.blood$pra_status==2,]
+
+df.alleles$allele_c <- ifelse(df.alleles$class_i==1 & df.alleles$class_ii==1,3,
+                              ifelse(df.alleles$class_i==1 & df.alleles$class_ii==0,1,2))
+
+df.alleles$allele_c <- factor(df.alleles$allele_c, levels=c(1,2,3),
+                              labels = c("1","2","both"))
+make2x2table(df.alleles$allele_c,df.alleles$rej_c,
+             mycols = c("No rejection","Rejection","Total"),
+             myrows=c("Class I","Class II","Class I and II","Total"),
+             "Allele class and rejection")
+```
+Table 16 includes only PRA+ patients and shows those who have class I, class II, or both class I and II alleles. There is not a significant association between allele class and rejection status.
+
+```{r tab17}
+make2x2table(df.alleles$allele_c,df.alleles$donor_c,
+             mycols = c("No donor \nspecific antibody","Donor specific \nantibody","Total"),
+             myrows=c("Class I","Class II","Class I and II","Total"),
+             "Allele class and donor specific antibody")
+```
+Table 17 includes only PRA+ patients and explores the relationship between allele class and development of a donor specific antibody. 100% of those who did not develop a donor specific antibody had a class I allele only, while those who did develop a donor specific antibody were fairly evenly spread among class I, class II, or both. There is a significant relationship between allele class and development of a donor specific antibody ($p=0.01$).
+```{r tab18}
+make2x2table(df.blood$rej_c,df.blood$pra_status,
+             mycols = colnames.all,
+             myrows=c("No rejection","Rejection","Total"),
+             "Rejection and PRA status")
+```
+Table 18 explores the relationship between rejection status and PRA status. 8.6% of PRA- patients had a positive rejection status, while 20.7% of PRA+ patients had a positive rejection status. This relationship is not statistically significant.
+
+```{r tab19}
+make2x2table(df.blood$rej_c,df.blood$donor_c,
+             mycols = c("No donor \nspecific antibody","Donor specific \nantibody","Total"),
+             myrows=c("No rejection","Rejection","Total"),
+             "Rejection and donor specific antibody")
+
+```
+Table 19 explores the relationship between rejection status and developing a donor specific antibody. 6.5% of those who did not develop a donor specific antibody had a positive rejection status, while 21.2% of those who did develop a donor specific antibody had a positive rejection status. This relationship is not statistically significant.
+
+\clearpage
+\section{Other figures of (possible) interest}
+
+Here I present scatter plots of cPRA and total blood product exposures, but differentiated by other variables of interest. The variables of interest were based on the significant or nearly significant variables from the "Study Objectives" and "Outcomes" tables.
+
+```{r otherplots}
+makescatter(df.blood,df.blood$prior_donor_exposures,df.blood$cpra,TRUE,df.blood$diag_c,
+            title="cPRA and blood product exposure categories \nby diagnosis",
+            xlab="Prior blood product exposures (counts)",
+            faclabs = c("ARVD","Dilated CM","Failed SV","Restrictive CM","Other"),
+            factitle = "Diagnosis",
+            cols=rev(cbPalette))
+
+makescatter(df.blood,df.blood$prior_donor_exposures,df.blood$cpra,TRUE,df.blood$donor_c,
+            title="cPRA and blood product exposure categories \nby donor specific antibody",
+            xlab="Prior blood product exposures (counts)",
+            faclabs = c("No","Yes"),
+            factitle = "Donor specific \n antibody",
+            cols=rev(cbPalette))
+
+makescatter(df.blood,df.blood$prior_donor_exposures,df.blood$cpra,TRUE,df.blood$plasma_c,
+            title="cPRA and blood product exposure categories \nby Plasmapheresis",
+            xlab="Prior blood product exposures (counts)",
+            faclabs = c("No","Yes"),
+            factitle = "Plasmapheresis",
+            cols=rev(cbPalette))
+
+makescatter(df.blood,df.blood$prior_donor_exposures,df.blood$cpra,TRUE,df.blood$rej_c,
+            title="cPRA and blood product exposure categories \nby rejection status",
+            xlab="Prior blood product exposures (counts)",
+            faclabs = c("No","Yes"),
+            factitle = "Rejection",
+            cols=rev(cbPalette))
+
+
+```
