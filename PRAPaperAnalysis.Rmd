@@ -3,12 +3,12 @@ title: "Panel Reactive Antibodies (PRAs) and Their Association with Blood Produc
 author:
   - 'Dr. Nina Guzzetta, Dr. Susana Cruz Beltran'
   - 'Statisticians: Dr. Renee Moore, Andrea Lane'
-date: "3/10/2021"
+date: "3/23/2021"
 geometry: margin=1cm
 output:
   pdf_document:
-    toc: true
-    number_sections: true
+    toc: false
+    number_sections: false
 header-includes:
     - \usepackage{caption}
 ---
@@ -38,16 +38,17 @@ cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2",
 \captionsetup[table]{labelformat=empty}
 
 ```{r upload}
-df.sheet1 <- read_excel("Transplant data.final.xlsx", sheet = 1,
+df.sheet1 <- read_excel("Transplant data.final.withUNOS.xlsx", sheet = 1,
                         col_types = c("text","text","date","text","numeric",
                                       "text","text","text", "date","date",
                                       "text","text","text","numeric","text",
-                                      "text",rep("numeric",5),"text",rep("numeric",16)))
-df.sheet2 <- read_excel("Transplant data.final.xlsx", sheet = 2,
+                                    "text",rep("numeric",5),"text",rep("numeric",16),"text"))
+
+df.sheet2 <- read_excel("Transplant data.final.withUNOS.xlsx", sheet = 2,
                         col_types = c("text","text","date","text","numeric",
                                       "text","text","text", "date","date",
-                                      "text","text","text","numeric",rep("numeric",6),"text",
-                                      "text",rep("numeric",5),"text",rep("numeric",16)))
+                                "text","text","text","numeric",rep("numeric",6),"text",
+                                    "text",rep("numeric",5),"text",rep("numeric",16),"text"))
 
 df.neg <- df.sheet1[-1,]
 df.pos <- df.sheet2[-1,]
@@ -73,6 +74,8 @@ names(df.neg)[36] <- "post_ffp"
 names(df.neg)[37] <- "post_plt"
 names(df.neg)[38] <- "post_cryo"
 
+names(df.neg)[39] <- "unos"
+
 
 names(df.pos)[31] <- "prior_rbc"
 names(df.pos)[32] <- "prior_ffp"
@@ -88,6 +91,8 @@ names(df.pos)[41] <- "post_rbc"
 names(df.pos)[42] <- "post_ffp"
 names(df.pos)[43] <- "post_plt"
 names(df.pos)[44] <- "post_cryo"
+
+names(df.pos)[45] <- "unos"
 
 df.all <- bind_rows("1" = df.neg, "2" = df.pos, .id="pra_status")
 
@@ -127,6 +132,9 @@ df.all$abo_incompatible_nomiss <- factor(df.all$abo_incompatible_nomiss,
 df.all$prior_mech_nomiss <- factor(df.all$prior_mech_nomiss, levels = c(0,1),
                                          labels = c("No","Yes"))
 
+df.all$unos_new <- ifelse(df.all$unos=="1A",0,1)
+df.all$unos_f <- factor(df.all$unos_new,levels = c(0,1),labels=c("1A","1B"))
+
 df.all <- df.all[!is.na(df.all$prior_donor_exposures),]
 ```
 
@@ -159,7 +167,7 @@ mypval <- function(X,Y,symbol=TRUE){
   pval <- ifelse(pval=="0.00","<0.01",pval)
   if(symbol){pval <- ifelse(test=="Chi Square",
                  paste0(pval,""),
-                 paste0(pval,"*"))}
+                 paste0(pval,"^"))}
    }
   return(list(pval = pval, test = test))
 }
@@ -225,90 +233,6 @@ mystats <- function(X,Y){
   return(tab)
 }
 
-```
-
-\clearpage
-\section{Tables}
-```{r table1}
-varlist <- c("age","weight","no_of_prior_surgeries","gender_c","race_c","prior_mech_nomiss","diag_c","donor_time","cpb_time","abo_incompatible_nomiss","plasma_c","icu_length_of_stay_day", "vis", "time_to_extubation_hr","rej_c", "donor_c","ecmo_c")
-# var_levels <- lapply(df.all[varlist], FUN = varlevels)
-# df_levels <- data.frame(matrix(unlist(var_levels), nrow=length(varlist),byrow = T))
-
-myfulltab <- lapply(df.all[varlist], FUN = mystats, Y = df.all$pra_status)
-
-mat.tab <- as.matrix(unlist(myfulltab[[1]]))
-for (i in 2:length(myfulltab)){
-  mat.tab <- rbind(mat.tab,as.matrix(unlist(myfulltab[[i]])))
-}
-
-mypvals <- lapply(df.all[varlist], function(x)
-                  rep(mypval(x,df.all$pra_status)$pval,varlevels(x)))
-# mytest <- lapply(df.all[varlist], function(x)
-#                   rep(mypval(x,df.all$pra_status)$test,varlevels(x)))
-# mytestmat <- as.matrix(unlist(mytest))
-mypvalmat <- as.matrix(unlist(mypvals))
-mat.tab.p <- cbind(mat.tab,mypvalmat)
-df.tab <- data.frame(mat.tab.p)
-
-names(df.tab)[2] <- paste0(names(df.tab)[2],
-  footnote_marker_symbol(1, "latex"))
-rownames(df.tab) <- c("Age (Years)", "Weight at transplantation (kg)", 
-                      "Number of previous surgeries","Female", "Male", "White",
-                      "African American", "Hispanic","Asian", "No response",  
-                       "No", "Yes","ARVD","Dilated CM","Failed SV",
-                      "Restrictive CM","Other","Donor cross clamp time (min)",
-                      "CPB time (min)","No ","Yes ","No  ","Yes  ",
-                      "Length of ICU stay (days)","Vasoactive inotrope score",
-                      "Time to extubation (hrs)","No   ","Yes   ","No    ",
-                      "Yes    ","No     ","Yes     ")
-
-kable(df.tab[1:17,], "latex", booktabs = T, align = "l", col.names = c("All patients (n=64)", "PRA- (n=35)", "PRA+ (n=29)", "p value"), caption = "Table 1a: Demographic and Preoperative Variables") %>%
-  kable_styling(latex_options = "hold_position") %>% 
-  group_rows("Gender", 4, 5, bold = FALSE) %>% 
-  group_rows("Race", 6, 10, bold = FALSE) %>% 
-  group_rows("Mechanical support prior to transplantation", 11, 12, bold = FALSE) %>% 
-  group_rows("Diagnosis",13,17,bold=FALSE) %>% 
-  collapse_rows(columns = 5,valign = "top", latex_hline = "none") %>% 
-  footnote(general = "Continuous variables expressed as median (Q1,Q3), Wilcoxon rank sum test; Categorical variables expressed as N(%), Chi square/*Fisher's",threeparttable=T)
-
-
-
-kable(df.tab[18:nrow(df.tab),], "latex", booktabs = T, align = "l", col.names = c("All patients (n=64)", "PRA- (n=35)", "PRA+ (n=29)", "p value"), caption = "Table 1b: Intra and Postoperative Variables") %>%
-  kable_styling(latex_options = "hold_position") %>% 
-  group_rows("Intraoperative",1,6,bold=TRUE) %>% 
-  group_rows("ABO incompatible",3,4,bold=FALSE) %>% 
-  group_rows("Plasmapheresis",5,6,bold=FALSE) %>% 
-  group_rows("Postoperative",7,15,bold=TRUE) %>% 
-  group_rows("Rejection",10,11,bold=FALSE) %>% 
-  group_rows("Donor specific antibody",12,13,bold=FALSE) %>% 
-  group_rows("ECMO",14,15,bold=FALSE) %>% 
-  collapse_rows(columns = 5,valign = "top", latex_hline = "none") %>% 
-  footnote(general = "Continuous variables expressed as median (Q1,Q3), Wilcoxon rank sum test; Categorical variables expressed as N(%), Chi square/*Fisher's",threeparttable=T)
-
-```
-
-
-\clearpage
-
-```{r bloodprodclean}
-##create binary variables for did/did not have prior exposures
-df.blood <- df.all[!is.na(df.all$prior_donor_exposures),]
-df.blood$prior_bin <- factor(ifelse(df.blood$prior_donor_exposures>0,1,0),levels = c(0,1))
-df.blood$rbc_bin <- factor(ifelse(df.blood$prior_rbc>0,1,0),levels = c(0,1))
-df.blood$ffp_bin <- factor(ifelse(df.blood$prior_ffp>0,1,0),levels = c(0,1))
-df.blood$plt_bin <- factor(ifelse(df.blood$prior_plt>0,1,0),levels = c(0,1))
-df.blood$cryo_bin <- factor(ifelse(df.blood$prior_cryo>0,1,0),levels = c(0,1))
-df.blood$cell <- df.blood$prior_rbc + df.blood$prior_plt
-df.blood$acell <- df.blood$prior_ffp + df.blood$prior_cryo
-df.blood$cell_bin <- factor(ifelse(df.blood$cell>0,1,0),levels = c(0,1))
-df.blood$acell_bin <- factor(ifelse(df.blood$acell>0,1,0),levels = c(0,1))
-df.blood$pra_bin <- factor(ifelse(df.blood$pra_status==1,0,1),levels=c(0,1))
-
-```
-
-
-```{r studyobjectives}
-
 mystats2 <- function(X,Y){
   if(class(X)=="numeric"&&class(Y)=="factor"){
     tab <- matrix(NA,1,3)
@@ -332,7 +256,7 @@ mystats2 <- function(X,Y){
   }
   
   if(class(X)=="factor"&&class(Y)=="factor"){
-        nlev <- nlevels(X)
+    nlev <- nlevels(X)
     all_1 <- c()
     all_2 <- c()
     strat1_1 <- c()
@@ -369,7 +293,152 @@ mystats2 <- function(X,Y){
   return(tab)
 }
 
-varlist <- c("prior_bin","rbc_bin","plt_bin","ffp_bin","cryo_bin","prior_donor_exposures","prior_rbc","prior_plt","prior_ffp","prior_cryo")
+otherstats <- function(X,Y){
+  if(class(X)=="factor"&&class(Y)=="numeric"){
+  stattab <- t(mystats2(Y,X))
+  pval <- format(round(wilcox.test(Y[X==levels(X)[1]],Y[X==levels(X)[2]])$p.value,2),nsmall=2)
+  pval <- ifelse(pval == 1,0.99,pval)
+  pval <- ifelse(pval=="0.00","<0.01",pval)
+  pval <- rep(pval,nlevels(X))
+  tab <- cbind(stattab,pval)
+  }
+  if(class(X)=="numeric"&&class(Y)=="numeric"){
+      stattab <- format(round(cor.test(X,Y,method = "spearman")$estimate,2),nsmall=2)
+      pval <- format(round(cor.test(X,Y,method = "spearman")$p.value,2),nsmall = 2)
+      tab <- cbind(stattab,pval)
+  }
+  
+  return(tab)
+}
+
+```
+
+\clearpage
+\section{Tables}
+```{r table1}
+varlist <- c("age","weight","no_of_prior_surgeries","gender_c","race_c","prior_mech_nomiss","diag_c","unos_f","donor_time","cpb_time","abo_incompatible_nomiss","plasma_c","icu_length_of_stay_day", "vis", "time_to_extubation_hr","rej_c", "donor_c","ecmo_c")
+# var_levels <- lapply(df.all[varlist], FUN = varlevels)
+# df_levels <- data.frame(matrix(unlist(var_levels), nrow=length(varlist),byrow = T))
+
+myfulltab <- lapply(df.all[varlist], FUN = mystats, Y = df.all$pra_status)
+
+mat.tab <- as.matrix(unlist(myfulltab[[1]]))
+for (i in 2:length(myfulltab)){
+  mat.tab <- rbind(mat.tab,as.matrix(unlist(myfulltab[[i]])))
+}
+
+mypvals <- lapply(df.all[varlist], function(x)
+                  rep(mypval(x,df.all$pra_status)$pval,varlevels(x)))
+# mytest <- lapply(df.all[varlist], function(x)
+#                   rep(mypval(x,df.all$pra_status)$test,varlevels(x)))
+# mytestmat <- as.matrix(unlist(mytest))
+mypvalmat <- as.matrix(unlist(mypvals))
+mat.tab.p <- cbind(mat.tab,mypvalmat)
+all.tab <- data.frame(mat.tab.p)
+
+names(all.tab)[2] <- paste0(names(all.tab)[2],
+  footnote_marker_symbol(1, "latex"))
+rownames(all.tab) <- c("Age (Years)", "Weight at transplantation (kg)", 
+                      "Number of previous surgeries","Female", "Male", "White",
+                      "African American", "Hispanic","Asian", "No response",  
+                       "No", "Yes","ARVD","Dilated CM","Failed SV",
+                      "Restrictive CM","Other","1A","1B","Donor cross clamp time (min)",
+                      "CPB time (min)","No ","Yes ","No  ","Yes  ",
+                      "Length of ICU stay (days)","Vasoactive inotrope score",
+                      "Time to extubation (hrs)","No   ","Yes   ","No    ",
+                      "Yes    ","No     ","Yes     ")
+
+demonly <- matrix(all.tab[1:25,1],25,1)
+rownames(demonly) <- rownames(all.tab)[1:25]
+kable(demonly, "latex", booktabs = T, align = "l", col.names=c("All patients"),caption = "Table 1: Demographic, Preoperative, and Intraoperative Variables for all patients (N=64)") %>%
+  kable_styling(latex_options = "hold_position") %>% 
+  group_rows("Demographic and preoperative",1,19,bold=TRUE) %>% 
+  group_rows("Sex", 4, 5, bold = FALSE) %>% 
+  group_rows("Race", 6, 10, bold = FALSE) %>% 
+  group_rows("Mechanical support prior to transplantation", 11, 12, bold = FALSE) %>% 
+  group_rows("Intraoperative",20,25,bold=TRUE) %>% 
+  group_rows("Diagnosis",13,17,bold=FALSE) %>% 
+  group_rows("UNOS status",18,19,bold=FALSE) %>% 
+  group_rows("ABO incompatible",22,23,bold=FALSE) %>% 
+  group_rows("Plasmapheresis",24,25,bold=FALSE) %>% 
+  footnote(general = "Continuous variables expressed as median (Q1,Q3); Categorical variables expressed as n(%)",threeparttable=T)
+
+
+
+kable(all.tab[1:25,], "latex", booktabs = T, align = "l", col.names = c("All patients (n=64)", "HLA ab- (n=35)", "HLA ab+ (n=29)", "p value"), caption = "Table 2a: Demographic, Preoperative, and Intraoperative Variables by binary HLA ab status") %>%
+  kable_styling(latex_options = "hold_position") %>% 
+  group_rows("Demographic and preoperative",1,19,bold=TRUE) %>% 
+  group_rows("Sex", 4, 5, bold = FALSE) %>% 
+  group_rows("Race", 6, 10, bold = FALSE) %>% 
+  group_rows("Mechanical support prior to transplantation", 11, 12, bold = FALSE) %>% 
+  group_rows("Intraoperative",20,25,bold=TRUE) %>% 
+  group_rows("Diagnosis",13,17,bold=FALSE) %>% 
+  group_rows("UNOS status",18,19,bold=FALSE) %>% 
+  group_rows("ABO incompatible",22,23,bold=FALSE) %>% 
+  group_rows("Plasmapheresis",24,25,bold=FALSE) %>% 
+  collapse_rows(columns = 5,valign = "top", latex_hline = "none") %>% 
+  footnote(general = "Continuous variables expressed as median (Q1,Q3), Wilcoxon rank sum test; Categorical variables expressed as n(%), Chi square test or Fisher's exact test^", threeparttable=T)
+  
+
+
+```
+
+
+\clearpage
+
+```{r bloodprodclean}
+##create binary variables for did/did not have prior exposures
+df.blood <- df.all[!is.na(df.all$prior_donor_exposures),]
+df.blood$prior_bin <- factor(ifelse(df.blood$prior_donor_exposures>0,1,0),levels = c(0,1))
+df.blood$rbc_bin <- factor(ifelse(df.blood$prior_rbc>0,1,0),levels = c(0,1))
+df.blood$ffp_bin <- factor(ifelse(df.blood$prior_ffp>0,1,0),levels = c(0,1))
+df.blood$plt_bin <- factor(ifelse(df.blood$prior_plt>0,1,0),levels = c(0,1))
+df.blood$cryo_bin <- factor(ifelse(df.blood$prior_cryo>0,1,0),levels = c(0,1))
+df.blood$cell <- df.blood$prior_rbc + df.blood$prior_plt
+df.blood$acell <- df.blood$prior_ffp + df.blood$prior_cryo
+df.blood$cell_bin <- factor(ifelse(df.blood$cell>0,1,0),levels = c(0,1))
+df.blood$acell_bin <- factor(ifelse(df.blood$acell>0,1,0),levels = c(0,1))
+df.blood$pra_bin <- factor(ifelse(df.blood$pra_status==1,0,1),levels=c(0,1))
+
+```
+
+\clearpage
+```{r allcpratab}
+varlist <- c("age","weight","no_of_prior_surgeries","gender_c","prior_mech_nomiss","donor_time","cpb_time","abo_incompatible_nomiss","plasma_c")
+
+myfulltab2 <- lapply(df.blood[varlist], FUN = otherstats, Y = df.blood$cpra)
+
+mat.tab2 <- as.matrix(unlist(myfulltab2[[1]]))
+for (i in 2:length(myfulltab2)){
+  mat.tab2 <- rbind(mat.tab2,as.matrix(unlist(myfulltab2[[i]])))
+}
+
+mat.tab2 <- mat.tab2[-c(4,7,12,15),]
+rownames(mat.tab2) <- c("Age (Years)", "Weight at transplantation (kg)",
+                      "Number of previous surgeries","Female", "Male",
+                       "No", "Yes","Donor cross clamp time (min)",
+                      "CPB time (min)","No ","Yes ","No  ","Yes  ")
+
+
+kable(mat.tab2, "latex", booktabs = T, align = "l", col.names = c("HLA ab","p value"), caption = "Table 2b: Pre, Intra, and Postoperative variables by continuous HLA ab") %>%
+  kable_styling(latex_options = "hold_position") %>% 
+  group_rows("Demographic and preoperative",1,7,bold=TRUE) %>% 
+  group_rows("Sex",4,5,bold=FALSE) %>% 
+  group_rows("Mechanical support prior to transplantation",6,7,bold=FALSE) %>% 
+  group_rows("Intraoperative",8,13,bold=TRUE) %>% 
+  group_rows("ABO incompatible",10,11,bold=FALSE) %>% 
+  group_rows("Plasmapheresis",12,13,bold=FALSE) %>% 
+  collapse_rows(columns = 3,valign = "top", latex_hline = "none") %>% 
+  footnote(general = "Continuous variables expressed as Spearman rank correlation $r$; Categorical variables expressed as median (Q1,Q3), Wilcoxon rank sum test",threeparttable=T,escape=F)
+
+```
+
+
+\clearpage
+
+```{r studyobjectives}
+
+varlist <- c("prior_donor_exposures","prior_rbc","prior_plt","prior_ffp","prior_cryo","prior_bin","rbc_bin","plt_bin","ffp_bin","cryo_bin")
 
 myfulltab <- lapply(df.blood[varlist], FUN = mystats2, Y = df.blood$pra_bin)
 
@@ -384,23 +453,9 @@ mypvalmat <- as.matrix(unlist(mypvals))
 mat.tab.p <- cbind(mat.tab,mypvalmat)
 df.tab <- data.frame(mat.tab.p)
 
-otherstats <- function(X,Y){
-  if(class(X)=="factor"&&class(Y)=="numeric"){
-  stattab <- t(mystats2(Y,X))
-  pval <- rep(format(round(wilcox.test(Y[X==levels(X)[1]],Y[X==levels(X)[2]])$p.value,2),nsmall=2),nlevels(X))
-  tab <- cbind(stattab,pval)
-  }
-  if(class(X)=="numeric"&&class(Y)=="numeric"){
-      stattab <- format(round(cor.test(X,Y,method = "spearman")$estimate,2),nsmall=2)
-      pval <- format(round(cor.test(X,Y,method = "spearman")$p.value,2),nsmall = 2)
-      tab <- cbind(stattab,pval)
-  }
-  
-  return(tab)
-}
 
 
-varlist2 <- c("prior_bin","rbc_bin","plt_bin","ffp_bin","cryo_bin","prior_donor_exposures","prior_rbc","prior_plt","prior_ffp","prior_cryo")
+varlist2 <- c("prior_donor_exposures","prior_rbc","prior_plt","prior_ffp","prior_cryo","prior_bin","rbc_bin","plt_bin","ffp_bin","cryo_bin")
 
 myfulltab2 <- lapply(df.blood[varlist], FUN = otherstats, Y = df.blood$cpra)
 
@@ -409,34 +464,56 @@ for (i in 2:length(myfulltab2)){
   mat.tab2 <- rbind(mat.tab2,as.matrix(unlist(myfulltab2[[i]])))
 }
 
+mat.tab2 <- mat.tab2[-c(6,9,12,15,18),]
 
-df.tab2 <- cbind(insertRows(df.tab,c(1,4,7,10,13),as.data.frame(matrix("",5,ncol(df.tab)))),data.frame(mat.tab2))
+rownames(df.tab) <- rownames(mat.tab2) <- c("Total prior donor exposures ","Red blood cells ","Platelets ","Fresh frozen plasma ","Cryoprecipitate ","No","Yes","No ","Yes ","No  ","Yes  ","No   ","Yes   ","No    ","Yes    ")
 
-rownames(df.tab2) <- c("Total prior donor exposures","No","Yes","Red Blood Cells","No ","Yes ","Platelets","No  ","Yes  ","Fresh frozen plasma","No   ","Yes   ","Cryoprecipitate","No    ","Yes    ","Total prior donor exposures ","Red blood cells ","Platelets ","Fresh frozen plasma ","Cryoprecipitate ")
-
-kable(df.tab2[,1:4], "latex", booktabs = T, align = "l", col.names = c("All patients (n=64)", "PRA- (n=35)", "PRA+ (n=29)", "p value"), caption = "Table 2a: Blood products and PRA (binary)") %>%
+kable(df.tab, "latex", booktabs = T, align = "l", col.names = c("All patients (n=64)", "HLA ab- (n=35)", "HLA ab+ (n=29)", "p value"), caption = "Table 3a: Blood products and binary HLA ab status") %>%
   kable_styling(latex_options = "hold_position") %>% 
-  group_rows("Blood products - binary",1,15,bold=TRUE) %>% 
-  group_rows("Blood products - count", 16, 20, bold = TRUE) %>% 
+   group_rows("Blood products - binary n (%)",6,15,bold=TRUE) %>% 
+   group_rows("Blood products - continuous median(Q1,Q3)", 1, 5, bold = TRUE) %>% 
+   collapse_rows(columns = 5,valign = "top", latex_hline = "none") %>% 
+   row_spec(5, hline_after = TRUE) %>%
+   group_rows("Total prior donor exposures",6,7,bold=FALSE) %>% 
+  group_rows("Red blood cells",8,9,bold=FALSE) %>%
+  group_rows("Platelets",10,11,bold=FALSE) %>%
+  group_rows("Fresh frozen plasma",12,13,bold=FALSE) %>%
+  group_rows("Cryoprecipitate",14,15,bold=FALSE) %>%
+  footnote(general = "Continuous blood products: Wilcoxon rank sum test; Binary blood products: Chi square test or Fisher's exact test^",threeparttable=T)
+
+```
+\clearpage
+
+```{r bloodprod2}
+
+kable(mat.tab2, "latex", booktabs = T, align = "l", col.names = c("HLA ab", "p value"), caption = "Table 3b: Blood products and continuous HLA ab") %>%
+  kable_styling(latex_options = "hold_position") %>% 
+    group_rows("Blood products - binary: median (Q1,Q3)",6,15,bold=TRUE) %>% 
+    group_rows("Blood products - continuous: correlation r", 1, 5, bold = TRUE) %>% 
+    collapse_rows(columns = 3,valign = "top", latex_hline = "none") %>% 
+    row_spec(5, hline_after = TRUE) %>%
+    group_rows("Total prior donor exposures",6,7,bold=FALSE) %>% 
+    #group_rows("RBCs",8,9,bold=FALSE) %>% 
+   group_rows("Platelets",10,11,bold=FALSE) %>%
+   group_rows("Fresh frozen plasma",12,13,bold=FALSE) %>%
+   group_rows("Cryoprecipitate",14,15,bold=FALSE) %>%
+  footnote(general = "Continuous blood product variables expressed as Spearman rank correlation $r$; Binary blood product variables expressed as median (Q1,Q3), Wilcoxon rank sum test",threeparttable=T,escape=F)
+
+```
+
+\clearpage
+```{r postop}
+kable(all.tab[26:34,], "latex", booktabs = T, align = "l", col.names = c("All patients (n=64)", "HLA ab- (n=35)", "HLA ab+ (n=29)", "p value"), caption = "Table 4: Postoperative Variables by binary HLA ab status") %>%
+  kable_styling(latex_options = "hold_position") %>% 
+  group_rows("Rejection",4,5,bold=FALSE) %>% 
+  group_rows("Donor specific antibody",6,7,bold=FALSE) %>% 
+  group_rows("ECMO",8,9,bold = FALSE) %>% 
   collapse_rows(columns = 5,valign = "top", latex_hline = "none") %>% 
-  row_spec(15, hline_after = TRUE) %>%
-  add_indent(c(2,3,5,6,8,9,11,12,14,15)) %>% 
-  footnote(general = "Continuous variables: median (Q1,Q3), Wilcoxon rank sum test; Categorical variables: N(%), Chi square/Fisher's",threeparttable=T)
-
-
-kable(df.tab2[,5:6], "latex", booktabs = T, align = "l", col.names = c("cPRA", "p value"), caption = "Table 2b: Blood products and cPRA (continuous)") %>%
-  kable_styling(latex_options = "hold_position") %>% 
-  group_rows("Blood products - binary",1,15,bold=TRUE) %>% 
-  group_rows("Blood products - count", 16, 20, bold = TRUE) %>% 
-  collapse_rows(columns = 3,valign = "top", latex_hline = "none") %>% 
-  add_indent(c(2,3,5,6,8,9,11,12,14,15)) %>% 
-  row_spec(15, hline_after = TRUE) %>%
-  footnote(general = "Binary blood products expressed as median (Q1,Q3), Wilcoxon rank sum test; Count blood products expressed as Spearman rank correlation $r_s$",threeparttable=T,escape=F)
+  footnote(general = "Continuous variables expressed as median (Q1,Q3), Wilcoxon rank sum test; Categorical variables expressed as n(%), Chi square test or Fisher's exact test^", threeparttable=T)
 
 ```
 
 
-\clearpage
 
 
 ```{r bloodprodtabs}
@@ -455,7 +532,7 @@ make2x2table <- function(X,Y,mycols,myrows,caption){
 
   return(mytable)
 }
-colnames.all <- c("PRA-", "PRA+", "Total")
+colnames.all <- c("HLA ab-", "HLA ab+", "Total")
 
 ```
 
@@ -474,23 +551,12 @@ df.alleles$allele_c <- factor(df.alleles$allele_c, levels=c(1,2,3),
 make2x2table(df.alleles$allele_c,df.alleles$donor_c,
              mycols = c("No donor \nspecific antibody","Donor specific \nantibody","Total"),
              myrows=c("Class I","Class II","Class I and II","Total"),
-             "Table 3: Allele class and donor specific antibody")
+             "Table 5: Allele class and donor specific antibody")
 ```
 
 
-\section{Questions/Decisions to make as we move into modeling}
 
-1. Should blood products be modeled as **binary** or **counts**?
-2. Should individual blood products be part of the model or only the total?
-3. Is it sufficient to only control for demographic/preoperative variables?
-    - One reviewer states: "the association of PRA and outcomes should be adjusted to covariates known to affect all; time to extubation, ICU length of stay and total length of stay" but these outcomes occur **after** PRA and blood products are measured, so to me it does not make sense to control for them in the model. We should discuss as a group.
-4. We will need to condense **race** and **diagnosis** because some categories have very low counts. What is the most logical way to group each of these variables? 
-
-\newpage
-
-\section{Univariate Results}
-
-```{r univar}
+```{r univar,eval=FALSE}
 unimod <- function(var){
     mod <- glm(pra_bin ~ var,data=df.blood,family="binomial")
     coefs <- round(summary(mod)$coefficients[,1],2)
@@ -525,9 +591,9 @@ kable(mat.tab, "latex", booktabs = T, align = "l", col.names = c("Estimate (SE)"
 
 
 
-cormat <- matrix(cor(df.blood[,c("prior_rbc","prior_plt","prior_ffp","prior_cryo")]),4,4)
-rownames(cormat) <- c("RBCs","Plt","FFP","Cryo")
-kable(cormat, "latex", booktabs = T, align = "l", col.names = c("RBCs","Plt","FFP","Cryo"), caption = "Table 5: Correlation matrix for blood products") %>%
+cormat <- matrix(cor(df.blood[,c("prior_donor_exposures","prior_rbc","prior_plt","prior_ffp","prior_cryo")]),5,5)
+rownames(cormat) <- c("Total","RBCs","Plt","FFP","Cryo")
+kable(cormat, "latex", booktabs = T, align = "l", col.names = c("Total","RBCs","Plt","FFP","Cryo"), caption = "Table 5: Correlation matrix for blood products") %>%
   kable_styling(latex_options = "hold_position")
 
 
@@ -583,9 +649,9 @@ rownames(tabmat) <- c("Intercept","Total blood products","Mech support","Race (A
 kable(tabmat, "latex", booktabs = T, align = "l", col.names = c("Estimate (SE)","Odds Ratio (95% CI)","p value"), caption = "Final Model") %>%
   kable_styling(latex_options = "hold_position")
 
-# library(pROC)
-# test_prob = predict(finalmod, type = "response")
-# test_roc = roc(df.blood$pra_bin ~ test_prob, plot = TRUE, print.auc = TRUE)
+library(pROC)
+test_prob = predict(finalmod, type = "response")
+test_roc = roc(df.blood$pra_bin ~ test_prob, plot = TRUE, print.auc = TRUE)
 
 ```
 
