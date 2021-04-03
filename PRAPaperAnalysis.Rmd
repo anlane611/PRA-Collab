@@ -554,6 +554,25 @@ make2x2table(df.alleles$allele_c,df.alleles$donor_c,
              "Table 5: Allele class and donor specific antibody")
 ```
 
+\newpage 
+
+```{r scatter}
+plot(df.blood$age, df.blood$cpra,main="Relationship between age and continuous HLA ab \n (r=-0.04)",xlab="Age",ylab="HLA ab")
+abline(lm(df.blood$cpra~df.blood$age), col="red")
+
+```
+
+```{r scatter2}
+plot(df.blood$weight, df.blood$cpra,main="Relationship between weight and continuous HLA ab \n(r=-.002)",xlab="Weight",ylab="HLA ab")
+abline(lm(df.blood$cpra~df.blood$weight), col="red")
+```
+
+```{r scatter 3}
+plot(df.blood$prior_donor_exposures,df.blood$cpra,main="Relationship between total blood product exposures \nand continuous HLA ab (r=0.27)",xlab="Total blood product exposures",ylab="HLA ab")
+abline(lm(df.blood$cpra~df.blood$prior_donor_exposures), col="red")
+
+
+```
 
 
 ```{r univar,eval=FALSE}
